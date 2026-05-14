@@ -69,3 +69,7 @@ state_file: "/local/media/.strm_sync_state.json"
 
 # 日志文件路径；留空（null）则只输出到 stdout
 log_file: "/var/log/strm_sync.log"
+
+# 被忽略文件的独立日志（追加写入），用于排查是否有扩展名漏配
+# 留空（null）则不记录
+ignored_log: "/var/log/strm_sync.ignored.log"

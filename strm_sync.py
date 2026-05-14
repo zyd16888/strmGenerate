@@ -14,6 +14,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
@@ -45,6 +46,7 @@ DEFAULTS = {
 
     "state_file": "/local/media/.strm_sync_state.json",
     "log_file": "/var/log/strm_sync.log",
+    "ignored_log": "/var/log/strm_sync.ignored.log",
 }
 
 # 运行时配置，由 load_config() 填充
@@ -353,6 +355,28 @@ def save_state(state: dict):
     os.replace(tmp, state_file)
 
 
+def write_ignored_log(other_files: list[dict], scope: dict):
+    """
+    把未被分类（既不是 video 也不是 metadata）的文件追加写入独立日志，
+    方便用户检查是否有扩展名漏配。
+    """
+    path = CONFIG.get("ignored_log")
+    if not path:
+        return
+    try:
+        log_path = Path(path)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        scope_label = scope["remote"]
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"# === {ts} | scope={scope_label} | count={len(other_files)} ===\n")
+            for item in other_files:
+                f.write(f"{ts}\t{scope_label}\t{item['ext'] or '<no-ext>'}\t{item['path']}\n")
+        log.info(f"已记录 {len(other_files)} 个被忽略文件到 {log_path}")
+    except OSError as e:
+        log.warning(f"写入忽略日志失败 ({path}): {e}")
+
+
 def run_sync(subdir: str | None = None, full_cleanup: bool = False):
     start = datetime.now()
     scope = build_scope(subdir)
@@ -372,8 +396,16 @@ def run_sync(subdir: str | None = None, full_cleanup: bool = False):
 
     video_files = [f for f in remote_files if f["ext"] in CONFIG["video_extensions"]]
     metadata_files = [f for f in remote_files if f["ext"] in CONFIG["metadata_extensions"]]
-    other = len(remote_files) - len(video_files) - len(metadata_files)
-    log.info(f"分类: 视频 {len(video_files)} | 元数据 {len(metadata_files)} | 其它（忽略） {other}")
+    other_files = [
+        f for f in remote_files
+        if f["ext"] not in CONFIG["video_extensions"]
+        and f["ext"] not in CONFIG["metadata_extensions"]
+    ]
+    log.info(f"分类: 视频 {len(video_files)} | 元数据 {len(metadata_files)} | 其它（忽略） {len(other_files)}")
+    if other_files:
+        ext_dist = Counter(f["ext"] or "<no-ext>" for f in other_files)
+        log.info(f"  忽略扩展名分布: {dict(ext_dist.most_common(10))}")
+        write_ignored_log(other_files, scope)
 
     all_changed_dirs = set()
 
