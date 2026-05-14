@@ -18,47 +18,71 @@ from datetime import datetime
 from pathlib import Path
 
 import requests
+import yaml
 
 # ─────────────────────────────────────────────
-# 配置区 - 按你的实际情况修改
+# 内置默认值；config.yaml 中的同名字段会覆盖这里
 # ─────────────────────────────────────────────
-CONFIG = {
-    # rclone 远端名称和路径（网盘侧根）
+DEFAULTS = {
     "rclone_remote": "gdrive:Media",
-
-    # rclone 挂载的本地路径（STRM 文件内写入此路径前缀）
     "rclone_mount": "/mnt/gdrive/Media",
-
-    # 本地媒体库根目录（Emby 指向这里）
     "local_media": "/local/media",
 
-    # Emby 配置
     "emby_host": "http://localhost:8096",
     "emby_api_key": "YOUR_EMBY_API_KEY",
 
-    # 视频扩展名（这些文件只生成 STRM，不下载本体）
-    "video_extensions": {
+    "video_extensions": [
         ".mkv", ".mp4", ".avi", ".m4v", ".ts", ".mov",
-        ".wmv", ".flv", ".rmvb", ".iso", ".m2ts", ".bdmv"
-    },
-
-    # 元数据扩展名（这些文件下载到本地）
-    "metadata_extensions": {
+        ".wmv", ".flv", ".rmvb", ".iso", ".m2ts", ".bdmv",
+    ],
+    "metadata_extensions": [
         ".nfo", ".jpg", ".jpeg", ".png", ".webp", ".tbn",
-        ".srt", ".ass", ".ssa", ".sub", ".idx", ".vtt", ".sup"
-    },
+        ".srt", ".ass", ".ssa", ".sub", ".idx", ".vtt", ".sup",
+    ],
 
-    # rclone 并发参数
     "rclone_transfers": 8,
     "rclone_checkers": 16,
 
-    # 状态文件路径
     "state_file": "/local/media/.strm_sync_state.json",
-
-    # 日志文件路径（None 表示仅 stdout）
     "log_file": "/var/log/strm_sync.log",
 }
-# ─────────────────────────────────────────────
+
+# 运行时配置，由 load_config() 填充
+CONFIG: dict = {}
+
+log = logging.getLogger(__name__)
+
+
+def load_config(config_path: Path | None) -> dict:
+    """
+    读取 YAML 配置并与 DEFAULTS 合并；未提供路径时查找脚本目录下的 config.yaml。
+    扩展名字段统一转成 set 方便后续判定。
+    """
+    merged = dict(DEFAULTS)
+
+    if config_path is None:
+        candidate = Path(__file__).resolve().parent / "config.yaml"
+        if candidate.exists():
+            config_path = candidate
+
+    if config_path is not None:
+        if not config_path.exists():
+            print(f"ERROR: 配置文件不存在: {config_path}", file=sys.stderr)
+            sys.exit(2)
+        with open(config_path, encoding="utf-8") as f:
+            user_cfg = yaml.safe_load(f) or {}
+        if not isinstance(user_cfg, dict):
+            print(f"ERROR: 配置文件格式错误: {config_path}", file=sys.stderr)
+            sys.exit(2)
+        merged.update(user_cfg)
+        merged["_config_path"] = str(config_path)
+    else:
+        merged["_config_path"] = None
+
+    merged["video_extensions"] = {e.lower() for e in merged["video_extensions"]}
+    merged["metadata_extensions"] = {e.lower() for e in merged["metadata_extensions"]}
+
+    return merged
 
 
 def setup_logging():
@@ -75,10 +99,6 @@ def setup_logging():
         format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=handlers,
     )
-
-
-setup_logging()
-log = logging.getLogger(__name__)
 
 
 def build_scope(subdir: str | None) -> dict:
@@ -381,6 +401,12 @@ def run_sync(subdir: str | None = None, full_cleanup: bool = False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Google Drive → STRM 同步工具")
     parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="配置文件路径（默认查找脚本目录下的 config.yaml）"
+    )
+    parser.add_argument(
         "--subdir",
         type=str,
         default=None,
@@ -397,6 +423,13 @@ if __name__ == "__main__":
         help="只同步元数据，不处理 STRM"
     )
     args = parser.parse_args()
+
+    CONFIG.update(load_config(args.config))
+    setup_logging()
+    if CONFIG.get("_config_path"):
+        log.info(f"已加载配置: {CONFIG['_config_path']}")
+    else:
+        log.warning("未找到 config.yaml，使用内置默认值（建议复制 config.example.yaml 为 config.yaml）")
 
     if args.metadata_only:
         scope = build_scope(args.subdir)

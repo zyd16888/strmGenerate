@@ -1,0 +1,71 @@
+# strm_sync 配置文件
+# 复制此文件为 config.yaml 后按实际填写
+# 所有字段都是可选的，未填写则使用脚本内置默认值
+
+# ───── rclone / 路径 ─────
+
+# rclone 远端名称和路径（网盘侧根）
+rclone_remote: "gdrive:Media"
+
+# rclone 挂载的本地路径（STRM 文件内会写入这个前缀，Emby 通过它播放）
+rclone_mount: "/mnt/gdrive/Media"
+
+# 本地媒体库根目录（Emby 指向这里）
+local_media: "/local/media"
+
+
+# ───── Emby ─────
+
+emby_host: "http://localhost:8096"
+
+# Emby API Key；保持占位字符串则跳过 Emby 通知
+emby_api_key: "YOUR_EMBY_API_KEY"
+
+
+# ───── 扩展名分流 ─────
+
+# 视频扩展名：这些文件只生成 STRM，不下载本体
+video_extensions:
+  - .mkv
+  - .mp4
+  - .avi
+  - .m4v
+  - .ts
+  - .mov
+  - .wmv
+  - .flv
+  - .rmvb
+  - .iso
+  - .m2ts
+  - .bdmv
+
+# 元数据扩展名：这些文件下载到本地
+metadata_extensions:
+  - .nfo
+  - .jpg
+  - .jpeg
+  - .png
+  - .webp
+  - .tbn
+  - .srt
+  - .ass
+  - .ssa
+  - .sub
+  - .idx
+  - .vtt
+  - .sup
+
+
+# ───── rclone 并发参数 ─────
+
+rclone_transfers: 8
+rclone_checkers: 16
+
+
+# ───── 运行时文件 ─────
+
+# 状态文件（记录上次同步时间、本地 STRM 总数）
+state_file: "/local/media/.strm_sync_state.json"
+
+# 日志文件路径；留空（null）则只输出到 stdout
+log_file: "/var/log/strm_sync.log"
